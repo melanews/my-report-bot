@@ -1,6 +1,27 @@
 import telebot
 from telebot import types
 from datetime import datetime
+from flask import Flask
+from threading import Thread
+import os
+
+# --- Render Free Tier Port Fix (Flask) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run():
+    # Render የሚሰጠውን PORT ይጠቀማል፣ ከሌለ 8080
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# -----------------------------------------
 
 API_TOKEN = '8436012785:AAEM7JOA3MnXrWiCQkuFa_wkN7XMv-T3x10'
 bot = telebot.TeleBot(API_TOKEN)
@@ -62,7 +83,6 @@ def show_final_report(chat_id, target_date):
 @bot.message_handler(func=lambda message: message.text in STAFF_MEMBERS)
 def staff_selected(message):
     staff_name = message.text
-    # ቀኑን እንዲመርጡ መጠየቅ (ዛሬ ወይስ ሌላ ቀን)
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, row_width=2)
     today = datetime.now().strftime("%Y-%m-%d")
     markup.add(f"ዛሬ ({today})", "ሌላ ቀን")
@@ -74,7 +94,6 @@ def process_entry_date(message, staff_name):
     if "ዛሬ" in message.text:
         chosen_date = today
     else:
-        # ሰራተኛው ሌላ ቀን ከመረጠ ቀኑን እንዲጽፍ
         msg = bot.send_message(message.chat.id, "ቀኑን ያስገቡ (YYYY-MM-DD)፦")
         bot.register_next_step_handler(msg, lambda m: show_product_menu(m.chat.id, staff_name, m.text))
         return
@@ -136,5 +155,8 @@ def record_to_db(date, name, prod, count, cifs):
     all_data[date][name][prod]['count'] += count
     all_data[date][name][prod]['cifs'].extend(cifs)
 
-print("ቦቱ እየሰራ ነው...")
-bot.polling(none_stop=True)
+# --- ማስነሻ (Main execution) ---
+if __name__ == "__main__":
+    keep_alive() # በስተጀርባ ዌብ ሰርቨሩን ያስነሳል
+    print("ቦቱ እየሰራ ነው...")
+    bot.infinity_polling()
