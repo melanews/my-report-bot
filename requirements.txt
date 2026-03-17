@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 flask
-pyTelegramBotAPI python-telegram-bot-calendar
+python-telegram-bot-calendar
+
