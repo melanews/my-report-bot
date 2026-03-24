@@ -13,7 +13,6 @@ def home():
     return "Bot is running!"
 
 def run():
-    # Render የሚሰጠውን PORT ይጠቀማል፣ ከሌለ 8080
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -26,7 +25,6 @@ def keep_alive():
 API_TOKEN = '8436012785:AAEM7JOA3MnXrWiCQkuFa_wkN7XMv-T3x10'
 bot = telebot.TeleBot(API_TOKEN)
 
-# የአድሚን ID
 ADMIN_ID = 566979596 
 
 STAFF_MEMBERS = [
@@ -45,12 +43,12 @@ def start(message):
         markup.add(staff)
     bot.send_message(message.chat.id, "እንኳን ደህና መጡ! ስምዎን ይምረጡ፦", reply_markup=markup)
 
-# --- የሪፖርት ክፍል ---
+# --- የሪፖርት ክፍል (የተስተካከለ) ---
 @bot.message_handler(commands=['report'])
 def report_command(message):
     if message.chat.id == ADMIN_ID:
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True)
-        markup.add("የዛሬ ሪፖርት", "ሌላ ቀን")
+        markup.add("የዛሬ ሪፖርት", "የቀን ገደብ (Filter)")
         msg = bot.send_message(message.chat.id, "የትኛውን ሪፖርት ማየት ይፈልጋሉ?", reply_markup=markup)
         bot.register_next_step_handler(msg, handle_report_choice)
     else:
@@ -59,27 +57,51 @@ def report_command(message):
 def handle_report_choice(message):
     if message.text == "የዛሬ ሪፖርት":
         today = datetime.now().strftime("%Y-%m-%d")
-        show_final_report(message.chat.id, today)
-    elif message.text == "ሌላ ቀን":
-        msg = bot.send_message(message.chat.id, "ቀኑን ያስገቡ (ለምሳሌ: 2026-03-15)፦")
-        bot.register_next_step_handler(msg, lambda m: show_final_report(m.chat.id, m.text))
+        show_final_report(message.chat.id, today, today)
+    elif message.text == "የቀን ገደብ (Filter)":
+        msg = bot.send_message(message.chat.id, "ቀኑን ያስገቡ። ለምሳሌ፦\nአንድ ቀን ከሆነ: `2026-03-15` \nየቀን ገደብ ከሆነ: `01-01-2026 to 31-01-2026`", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_report_dates)
 
-def show_final_report(chat_id, target_date):
-    if target_date in all_data and all_data[target_date]:
-        report_text = f"📅 **የሪፖርት ቀን፦ {target_date}**\n"
-        report_text += "━━━━━━━━━━━━━━━\n\n"
-        for staff, prods in all_data[target_date].items():
-            report_text += f"👤 **ሰራተኛ፦ {staff}**\n"
-            for p_name, p_data in prods.items():
-                report_text += f"  🔹 {p_name}: {p_data['count']}\n"
-                if p_data['cifs']:
-                    report_text += f"  📄 CIF: {', '.join(p_data['cifs'])}\n"
-            report_text += "--------------------------------\n"
+def process_report_dates(message):
+    input_text = message.text
+    try:
+        if " to " in input_text:
+            # የቀን ገደብ ከሆነ (Start and End)
+            dates = input_text.split(" to ")
+            start_date = datetime.strptime(dates[0].strip(), "%d-%m-%Y").strftime("%Y-%m-%d")
+            end_date = datetime.strptime(dates[1].strip(), "%d-%m-%Y").strftime("%Y-%m-%d")
+            show_final_report(message.chat.id, start_date, end_date)
+        else:
+            # አንድ ቀን ብቻ ከሆነ
+            target_date = datetime.strptime(input_text.strip(), "%Y-%m-%d").strftime("%Y-%m-%d")
+            show_final_report(message.chat.id, target_date, target_date)
+    except Exception as e:
+        bot.send_message(message.chat.id, "⚠️ ስህተት፡ እባክዎ ቀኑን በትክክለኛ ፎርማት ያስገቡ።\nምሳሌ: 01-01-2026 to 31-01-2026")
+
+def show_final_report(chat_id, start_date, end_date):
+    found_any = False
+    report_text = f"📊 **ሪፖርት ከ {start_date} እስከ {end_date}**\n"
+    report_text += "━━━━━━━━━━━━━━━\n\n"
+    
+    # ሁሉንም ቀናት በሉፕ (Loop) በመፈተሽ በገደቡ ውስጥ ያሉትን መሰብሰብ
+    for date_key in sorted(all_data.keys()):
+        if start_date <= date_key <= end_date:
+            found_any = True
+            report_text += f"📅 **ቀን፦ {date_key}**\n"
+            for staff, prods in all_data[date_key].items():
+                report_text += f"👤 **ሰራተኛ፦ {staff}**\n"
+                for p_name, p_data in prods.items():
+                    report_text += f"  🔹 {p_name}: {p_data['count']}\n"
+                    if p_data['cifs']:
+                        report_text += f"  📄 CIF: {', '.join(p_data['cifs'])}\n"
+                report_text += "--------------------------------\n"
+
+    if found_any:
         bot.send_message(chat_id, report_text, parse_mode="Markdown")
     else:
-        bot.send_message(chat_id, f"❌ ለቀን {target_date} ምንም ዳታ አልተገኘም።")
+        bot.send_message(chat_id, f"❌ ለተጠቀሰው የቀን ገደብ ምንም ዳታ አልተገኘም።")
 
-# --- የዳታ መመዝገቢያ ክፍል ---
+# --- የተቀረው የዳታ መመዝገቢያ ክፍል እንዳለ ይቀጥላል ---
 @bot.message_handler(func=lambda message: message.text in STAFF_MEMBERS)
 def staff_selected(message):
     staff_name = message.text
@@ -155,8 +177,7 @@ def record_to_db(date, name, prod, count, cifs):
     all_data[date][name][prod]['count'] += count
     all_data[date][name][prod]['cifs'].extend(cifs)
 
-# --- ማስነሻ (Main execution) ---
 if __name__ == "__main__":
-    keep_alive() # በስተጀርባ ዌብ ሰርቨሩን ያስነሳል
+    keep_alive() 
     print("ቦቱ እየሰራ ነው...")
     bot.infinity_polling()
