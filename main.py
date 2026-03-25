@@ -43,7 +43,7 @@ def start(message):
         markup.add(staff)
     bot.send_message(message.chat.id, "እንኳን ደህና መጡ! ስምዎን ይምረጡ፦", reply_markup=markup)
 
-# --- የሪፖርት ክፍል (የተስተካከለ) ---
+# --- የሪፖርት ክፍል (በአንድ ላይ የሚደምር እና CIF በኮማ የሚለይ) ---
 @bot.message_handler(commands=['report'])
 def report_command(message):
     if message.chat.id == ADMIN_ID:
@@ -66,42 +66,63 @@ def process_report_dates(message):
     input_text = message.text
     try:
         if " to " in input_text:
-            # የቀን ገደብ ከሆነ (Start and End)
             dates = input_text.split(" to ")
+            # የኢትዮጵያ ቀን አጻጻፍ (DD-MM-YYYY) ከሆነው ወደ YYYY-MM-DD መቀየር
             start_date = datetime.strptime(dates[0].strip(), "%d-%m-%Y").strftime("%Y-%m-%d")
             end_date = datetime.strptime(dates[1].strip(), "%d-%m-%Y").strftime("%Y-%m-%d")
             show_final_report(message.chat.id, start_date, end_date)
         else:
-            # አንድ ቀን ብቻ ከሆነ
             target_date = datetime.strptime(input_text.strip(), "%Y-%m-%d").strftime("%Y-%m-%d")
             show_final_report(message.chat.id, target_date, target_date)
     except Exception as e:
         bot.send_message(message.chat.id, "⚠️ ስህተት፡ እባክዎ ቀኑን በትክክለኛ ፎርማት ያስገቡ።\nምሳሌ: 01-01-2026 to 31-01-2026")
 
 def show_final_report(chat_id, start_date, end_date):
+    summary_data = {} # ዳታውን ለመደመር የሚያገለግል ባዶ ዲክሽነሪ
     found_any = False
-    report_text = f"📊 **ሪፖርት ከ {start_date} እስከ {end_date}**\n"
-    report_text += "━━━━━━━━━━━━━━━\n\n"
-    
-    # ሁሉንም ቀናት በሉፕ (Loop) በመፈተሽ በገደቡ ውስጥ ያሉትን መሰብሰብ
-    for date_key in sorted(all_data.keys()):
+
+    # በሁሉም ቀናት ውስጥ እያለፈ የሚፈለገው ቀን ውስጥ ያሉትን መረጃዎች ይሰበስባል
+    for date_key in all_data.keys():
         if start_date <= date_key <= end_date:
             found_any = True
-            report_text += f"📅 **ቀን፦ {date_key}**\n"
-            for staff, prods in all_data[date_key].items():
-                report_text += f"👤 **ሰራተኛ፦ {staff}**\n"
+            for staff_name, prods in all_data[date_key].items():
+                if staff_name not in summary_data:
+                    summary_data[staff_name] = {}
+                
                 for p_name, p_data in prods.items():
-                    report_text += f"  🔹 {p_name}: {p_data['count']}\n"
-                    if p_data['cifs']:
-                        report_text += f"  📄 CIF: {', '.join(p_data['cifs'])}\n"
-                report_text += "--------------------------------\n"
+                    if p_name not in summary_data[staff_name]:
+                        summary_data[staff_name][p_name] = {'count': 0, 'cifs': []}
+                    
+                    # ብዛቱን መደመር
+                    summary_data[staff_name][p_name]['count'] += p_data['count']
+                    # CIF ቁጥሮችን መጨመር
+                    summary_data[staff_name][p_name]['cifs'].extend(p_data['cifs'])
 
-    if found_any:
-        bot.send_message(chat_id, report_text, parse_mode="Markdown")
+    if not found_any:
+        bot.send_message(chat_id, f"❌ ለተጠቀሰው የቀን ገደብ ({start_date} - {end_date}) ምንም ዳታ አልተገኘም።")
+        return
+
+    # ውጤቱን ወደ ጽሁፍ መቀየር
+    report_text = f"📊 **ጠቅላላ ሪፖርት ከ {start_date} እስከ {end_date}**\n"
+    report_text += "━━━━━━━━━━━━━━━━━━\n\n"
+
+    for staff_name, prods in summary_data.items():
+        report_text += f"👤 **ሰራተኛ፦ {staff_name}**\n"
+        for p_name, p_data in prods.items():
+            report_text += f"  🔹 {p_name}: {p_data['count']}\n"
+            if p_data['cifs']:
+                # CIF ቁጥሮችን በኮማ (,) ለይቶ ማሳየት
+                report_text += f"  📄 CIF: `{', '.join(p_data['cifs'])}` \n"
+        report_text += "--------------------------------\n"
+
+    # ሪፖርቱ በጣም ረጅም ከሆነ ለቴሌግራም መከፋፈል ሊያስፈልግ ይችላል
+    if len(report_text) > 4096:
+        for x in range(0, len(report_text), 4096):
+            bot.send_message(chat_id, report_text[x:x+4096], parse_mode="Markdown")
     else:
-        bot.send_message(chat_id, f"❌ ለተጠቀሰው የቀን ገደብ ምንም ዳታ አልተገኘም።")
+        bot.send_message(chat_id, report_text, parse_mode="Markdown")
 
-# --- የተቀረው የዳታ መመዝገቢያ ክፍል እንዳለ ይቀጥላል ---
+# --- የተቀረው የዳታ መመዝገቢያ ክፍል ---
 @bot.message_handler(func=lambda message: message.text in STAFF_MEMBERS)
 def staff_selected(message):
     staff_name = message.text
